@@ -2,7 +2,8 @@
 
 You can use the [editor on GitHub](https://github.com/taylorchasewhite/localization/edit/master/README.md) to maintain and preview the content for your website in Markdown files.
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+[![Watch the video](https://raw.github.com/GabLeRoux/WebMole/master/ressources/WebMole_Youtube_Video.png)](https://www.youtube.com/watch?v=5w84924gKxQ)
+
 
 ### Markdown
 
