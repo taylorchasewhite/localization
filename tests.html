@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Localization regression tests</title></head>
+<body>
+	<h1>Localization regression tests</h1>
+	<pre id="results">Running...</pre>
+	<canvas id="tests" width="1000" height="1000" hidden></canvas>
+	<script src="processing.js"></script>
+	<script>
+	"use strict";
+	window.testResults = (async () => {
+		const response = await fetch("web_localization.pde");
+		if (!response.ok) throw new Error("Sketch HTTP " + response.status);
+		const source = await response.text();
+		// Test-only access to the real compiled sketch's otherwise private state.
+		const hooks = `
+			Object testState() {
+				return [particles, tupac, poiA, rayReadings, globalRayCount, globalSenseNoise, vectorMode];
+			}
+			void testPopulation(Robot[] population) { particles = population; }
+			void disableMutation() { mutationRate = 2000000000; }
+		`;
+		const p = new Processing(document.getElementById("tests"), source + hooks);
+		p.noLoop();
+		const results = [];
+		function assert(condition, message) {
+			if (!condition) throw new Error(message);
+		}
+		function close(actual, expected, message) {
+			assert(Math.abs(actual - expected) < 1e-6, message + ": " + actual);
+		}
+		function key(code, coded = false) {
+			p.key = coded ? p.CODED : code;
+			p.keyCode = code;
+			p.keyPressed();
+		}
+		function test(name, run) {
+			p.randomSeed(42);
+			p.setup();
+			p.noLoop();
+			try {
+				run();
+				results.push({ name, passed: true });
+			} catch (error) {
+				results.push({ name, passed: false, error: error.message });
+			}
+		}
+		test("Initialization produces finite headings and a drawable scene", () => {
+			const [particles, robot] = p.testState();
+			assert(particles.length === 500, "Particle count");
+			assert(particles.every(b => Number.isFinite(b.orientation)), "Invalid headings");
+			assert(Number.isFinite(robot.orientation), "Invalid robot heading");
+			p.draw();
+		});
+		test("Positions and headings wrap correctly in both directions", () => {
+			const b = new p.Robot(true, "test");
+			b.setRobot(-10, -20, -0.2);
+			close(b.xPosition, 990, "Negative X");
+			close(b.yPosition, 980, "Negative Y");
+			close(b.orientation, p.TWO_PI - 0.2, "Negative heading");
+			b.setRobot(2010, 3020, p.TWO_PI * 3 + 0.2);
+			close(b.xPosition, 10, "Positive X");
+			close(b.yPosition, 20, "Positive Y");
+			close(b.orientation, 0.2, "Positive heading");
+		});
+		test("Noise-free robot and particles receive identical avoidance odometry", () => {
+			const [particles, robot, pois] = p.testState();
+			pois.add([500, 600]);
+			for (const b of [...particles, robot]) {
+				b.setRobot(500, 500, 0);
+				b.setNoise(0, 0, 0);
+			}
+			p.disableMutation();
+			p.frameStep();
+			assert(robot.orientation !== 0, "Avoidance did not turn");
+			close(p.evaluateSolution(), 0, "Particles diverged from robot command");
+		});
+		test("Repeated resampling does not overwrite parents or alias children", () => {
+			p.disableMutation();
+			const initial = [100, 200, 300].map((x, i) => {
+				const b = new p.Robot(true, "test " + i);
+				b.setRobot(x, 500, 0);
+				return b;
+			});
+			p.testPopulation(initial);
+			p.resampleParticles([2, 1, 0]);
+			const parents = p.testState()[0];
+			parents.forEach((b, i) => b.setRobot((i + 1) * 100, 500, 0));
+			p.resampleParticles([2, 1, 0]);
+			const children = p.testState()[0];
+			assert(children !== parents, "Reused population array");
+			assert(children.map(b => b.xPosition).join() === "100,100,200", "Wrong ancestry");
+			assert(parents.map(b => b.xPosition).join() === "100,200,300", "Parents overwritten");
+			assert(new Set(children).size === children.length, "Aliased children");
+			assert(children.every(b => !parents.includes(b)), "Aliased parent");
+		});
+		test("Sensor keys update every particle; zero noise and distant readings remain finite", () => {
+			key(p.UP, true);
+			let [particles, robot, pois] = p.testState();
+			close(robot.senseNoise, 5.25, "Robot noise");
+			assert(particles.every(b => b.senseNoise === 5.25), "Particle noise unchanged");
+			for (let i = 0; i < 30; i++) key(p.DOWN, true);
+			close(p.testState()[5], 0, "Noise minimum");
+			assert(particles.every(b => b.senseNoise === 0), "Zero-noise propagation");
+			for (const point of [[100, 100], [900, 100], [700, 900]]) pois.add(point);
+			const measurements = robot.sense();
+			assert(particles.every(b => Number.isFinite(b.measurementLogProbability(measurements))), "Invalid likelihood");
+			for (let i = 0; i < 20; i++) p.frameStep();
+			assert(Number.isFinite(p.evaluateSolution()), "Filter degenerated at zero noise");
+		});
+		test("Ray controls keep reading arrays aligned at zero and maximum", () => {
+			for (let i = 0; i < 40; i++) key(115);
+			let state = p.testState();
+			assert(state[4] === 0 && state[3].size() === 0, "Zero-ray bounds");
+			key(118);
+			state[2].add([100, 100]);
+			const before = state[0];
+			p.frameStep();
+			assert(p.testState()[0] === before, "Resampled without observations");
+			for (let i = 0; i < 40; i++) key(119);
+			state = p.testState();
+			assert(state[4] === 30 && state[3].size() === 30, "Maximum-ray bounds");
+			assert(state[0].every(b => b.rayCount === 30), "Particle ray settings");
+			p.frameStep();
+			assert(Number.isFinite(p.evaluateSolution()), "Ray filter failed");
+		});
+		test("Rays intersect the rendered square, including corners and parallel rays", () => {
+			close(p.rayBoxDistance(0, 100, 0, 100, 100), 50, "Horizontal entry");
+			close(p.rayBoxDistance(0, 145, 0, 100, 100), 50, "Square corner");
+			close(p.rayBoxDistance(100, 0, p.PI / 2, 100, 100), 50, "Vertical entry");
+			close(p.rayBoxDistance(0, 0, 0, 100, 100), 200, "Parallel miss");
+			close(p.rayBoxDistance(100, 100, 0, 100, 100), 0, "Inside square");
+			close(p.rayBoxDistance(300, 100, 0, 100, 100), 200, "Behind ray");
+		});
+		test("Mean error measures the shortest wrapped displacement", () => {
+			const [, robot] = p.testState();
+			robot.setRobot(990, 500, 0);
+			const b = new p.Robot(true, "edge");
+			b.setRobot(10, 500, 0);
+			p.testPopulation([b]);
+			close(p.evaluateSolution(), 20, "Across seam");
+		});
+		test("Landmarks localize the moving robot across three deterministic seeds", () => {
+			for (const seed of [1, 42, 123]) {
+				p.randomSeed(seed);
+				p.setup();
+				const [, , pois] = p.testState();
+				for (const point of [[150, 200], [850, 250], [650, 850], [200, 800]]) pois.add(point);
+				const before = p.evaluateSolution();
+				for (let t = 0; t < 150; t++) p.frameStep();
+				const after = p.evaluateSolution();
+				assert(after < 20 && after < before / 10,
+					"Seed " + seed + ": error " + before + " -> " + after);
+				assert(p.testState()[0].every(b =>
+					Number.isFinite(b.orientation) && b.xPosition >= 0 && b.xPosition < 1000 &&
+					b.yPosition >= 0 && b.yPosition < 1000), "Invalid particle state");
+			}
+		});
+		p.exit();
+		document.getElementById("results").textContent = results.map(r =>
+			(r.passed ? "PASS " : "FAIL ") + r.name + (r.error ? ": " + r.error : "")).join("\n");
+		return results;
+	})();
+	window.testResults.catch(error => {
+		document.getElementById("results").textContent = "Test runner failed: " + error;
+		console.error(error);
+	});
+	</script>
+</body>
+</html>

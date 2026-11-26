@@ -4,8 +4,6 @@
 // Miami University
 // Algorithm Design under Dr. Bo Brinkman
 
-import de.bezier.guido.*;
-
 // Global variables
 float radius = 50.0;
 int X, Y;
@@ -31,15 +29,15 @@ color poiColor;
 color black;
 color topColor;
 color rayColor;
+color vectorColor;
 int [][] pointsOfInterest;
 ArrayList poiA;
 int cols = 2;
 int rows = 0;
 String mySense;
-String solutionScore;
+float solutionScore;
 ArrayList rayReadings;
 Robot [] particles;
-Robot[] newParticles;
 Robot tupac;
 boolean turnLeft;
 float globalForwardNoise;
@@ -59,7 +57,6 @@ void setup(){
   rayColor= color (127, 0, 255, 255);
   vectorColor= color (127, 0, 255, 120);
   particles = new Robot [particleCount];
-  newParticles = new Robot[particleCount];
   mutationRate = 400;
   globalForwardNoise = .5;
   globalTurnNoise = .5;
@@ -72,7 +69,7 @@ void setup(){
   }
   globalRayWidth = 10;
   mySense = "";
-  solutionScore = "";
+  solutionScore = 0;
   pointsOfInterest = new int [rows][cols];
   poiA = new ArrayList();
   for (int i = 0; i < rows; i++) {
@@ -147,59 +144,58 @@ void draw(){
 }
 
 void frameStep() {
-   //background(230);
-   for (int a =0; a < 1; a++) {
-     //tupac.move(.1*PI, 20.0);
-     if(tupac.getMinDistance() < tooCloseDistance) {
-       tupac.move(0, 15.0, false);
-     }
-     else {
-       tupac.move(0, 15.0, true); 
-     }
-     for(int i = 0; i <particles.length; i++) {
-       particles[i].move(0, 15.0, true); 
-     }
-     ArrayList measurements = tupac.sense();
-     float[] w = new float[particles.length];
-     for( int i =0; i < particles.length; i++) {
-       w[i] = particles[i].mesurementProbability(measurements); // SLOW!!!!
-       ////println("\tP(x)" + particles[i].name + " " + w[i]);
-     }
-     int index  = int(random(particles.length));
-     float beta = 0.0;
-     float maxW = max(w);
-     ////println("MaxW:\t" + str(maxW));
-     
-     if(poiA.size() > 0) {
-         
-       for (int i =0; i < particles.length; i ++) {
-          beta+=random(2*maxW);
-          while(beta > w[index]) {
-           beta -=w[index];
-           index = (index+1) % particles.length; 
-          }
-          ////println("index==" + index);
-          Robot temp = new Robot(true, "particle" +i);
-          int spawn = int(random(mutationRate));
-          if (spawn == 52) {
-           temp = new Robot(true, particles[index].name); 
-           temp.setNoise(particles[index].forwardNoise, particles[index].turnNoise, particles[index].senseNoise);            
-           newParticles[i] = temp;               
-        }
-          else {
-            temp.xPosition = particles[index].xPosition;
-            temp.yPosition = particles[index].yPosition;
-            temp.orientation = particles[index].orientation;
-            temp.setNoise (particles[index].forwardNoise, particles[index].turnNoise, particles[index].senseNoise );
-            newParticles[i] = temp;
-          }
-          //newParticles[i] = particles[index];
-       }
-       particles = newParticles;
-     } 
-     evaluateSolution();
-   }
-  
+  float turn = 0;
+  float forward = 15;
+  if (tupac.getMinDistance() < tooCloseDistance) {
+    turn = turnLeft ? PI / 25 : -PI / 25;
+    forward = 7.5;
+  }
+  // The robot and every hypothesis receive the same odometry command.
+  tupac.move(turn, forward);
+  for (int i = 0; i < particles.length; i++) {
+    particles[i].move(turn, forward);
+  }
+  ArrayList measurements = tupac.sense();
+  if (poiA.size() > 0 && measurements.size() > 0) {
+    float[] weights = new float[particles.length];
+    for (int i = 0; i < particles.length; i++) {
+      weights[i] = particles[i].measurementLogProbability(measurements);
+    }
+    // Shift log likelihoods before exponentiation so unlikely observations
+    // cannot underflow every weight to zero.
+    float best = max(weights);
+    for (int i = 0; i < weights.length; i++) {
+      weights[i] = exp(weights[i] - best);
+    }
+    resampleParticles(weights);
+  }
+  evaluateSolution();
+}
+
+void resampleParticles(float[] weights) {
+  // Never overwrite the population being sampled (including on later frames).
+  Robot[] next = new Robot[particles.length];
+  float total = 0;
+  for (int i = 0; i < weights.length; i++) total += weights[i];
+  float spacing = total / particles.length;
+  float target = random(spacing);
+  float cumulative = weights[0];
+  int index = 0;
+  for (int i = 0; i < particles.length; i++) {
+    while (target > cumulative && index < particles.length - 1) {
+      index++;
+      cumulative += weights[index];
+    }
+    Robot parent = particles[index];
+    Robot child = new Robot(true, "particle " + i);
+    if (random(1) >= 1.0 / mutationRate) {
+      child.setRobot(parent.xPosition, parent.yPosition, parent.orientation);
+    }
+    child.setNoise(globalForwardNoise, globalTurnNoise, globalSenseNoise);
+    next[i] = child;
+    target += spacing;
+  }
+  particles = next;
 }
 void mouseMoved(){ // Set circle's next destination
   nX = mouseX;
@@ -248,7 +244,7 @@ void keyPressed() {
    else if (key == 115) { 
      if( globalRayCount > 0){
         globalRayCount--; 
-        rayReadings.remove(rayReadings.size());
+        rayReadings.remove(rayReadings.size() - 1);
      }     
    }
    else if (key == 97) { 
@@ -279,6 +275,9 @@ void keyPressed() {
   
  }
  tupac.senseNoise = globalSenseNoise;
+ for (int i = 0; i < particles.length; i++) {
+   particles[i].senseNoise = globalSenseNoise;
+ }
 
 }
 
@@ -289,7 +288,7 @@ void textUpdate() {
   text(x,735,30);  // STEP 6 Display Text
   fill(black);                        // STEP 5 Specify font color 
   text(mySense, 10, 55);
-  text("Solution score:\t" + nf(solutionScore,0,2), 735, 55);
+  text("Mean error (px): " + nf(solutionScore,0,2), 735, 55);
 
   
   text("Move Noise:\t\t\t" + nf(globalForwardNoise,0,1), 735,75);
@@ -343,14 +342,16 @@ void drawPOIs () {
 float evaluateSolution() {
   float sum = 0;
   for (int i = 0; i < particles.length; i++) {
-    int dx = (particles[i].xPosition - tupac.xPosition + (worldSize/2)) % worldSize - (worldSize/2);
-    int dy = (particles[i].yPosition - tupac.yPosition + (worldSize/2)) % worldSize - (worldSize/2);
-    int error = sqrt(sq(dx) + sq(dy));
+    float dx = abs(particles[i].xPosition - tupac.xPosition);
+    float dy = abs(particles[i].yPosition - tupac.yPosition);
+    dx = min(dx, worldSize - dx);
+    dy = min(dy, worldSize - dy);
+    float error = sqrt(sq(dx) + sq(dy));
     sum+=error; 
   }
   float solution = float(sum/float(particles.length));
   //println("SOLUTION: "+solution);
-  solutionScore = "" + solution;
+  solutionScore = solution;
   return solution; 
 }
 
@@ -393,7 +394,7 @@ class Robot {
      this.name = name;
      xPosition = random(worldSize);
      yPosition = random(worldSize);
-     orientation = random() * TWO_PI;
+     orientation = random(TWO_PI);
      forwardNoise = 0;
      turnNoise = 0;
      senseNoise = 0;
@@ -416,28 +417,9 @@ class Robot {
   } 
   
   void setRobot (float newX, float newY, float newOrientation) {
-    if (newX < 0){
-      newX =worldSize-newX;
-    }
-    else if (newX >= worldSize) {
-      newX = newX%worldSize;
-    }
-    if (newY < 70) {
-      ////println(name + "'s y coordinate is out of bounds " + newY);
-      newY = worldSize-newY;
-    } else if (newY >=(worldSize-70)) {
-      ////println(name + "'s y coordinate is out of bounds " + newY);
-      newY = newY %worldSize;
-      newY+=175;
-    }
-    if (newOrientation < 0 || newOrientation >= TWO_PI) {
-      ////println("Orientation must be between 2PI: " + newOrientation);
-      newOrientation =orientation;
-      //throw new Exception (name + "'s Orientation must be between 2PI");
-    }
-    xPosition = newX;
-    yPosition = newY;
-    orientation = newOrientation;
+    xPosition = ((newX % worldSize) + worldSize) % worldSize;
+    yPosition = ((newY % worldSize) + worldSize) % worldSize;
+    orientation = ((newOrientation % TWO_PI) + TWO_PI) % TWO_PI;
   }
   
   void setNoise (float newForwardNoise, float newTurnNoise, float newSenseNoise) {
@@ -446,7 +428,7 @@ class Robot {
      senseNoise = newSenseNoise;
   }
   
-   void sense () {
+   ArrayList sense () {
      ArrayList measurements = new ArrayList();
      mySense = "";
      
@@ -461,7 +443,7 @@ class Robot {
      }
      else {
        for (int i =0; i < rayCount; i++) {
-         float measure = this.getDistanceFromRay(i);
+         float measure = this.getDistanceFromRay(i) + senseNoise * nextGaussian();
          measurements.add(measure);
          rayReadings.set(i, measure); 
        }
@@ -471,56 +453,30 @@ class Robot {
     
   }
   
-  float gaussian (float mu, float sigma, float x) {
-    // calculates the probability of x for 1-dim Gaussian with mean mu and var. sigma
-     return exp (-1*(sq(mu-x)) / sq(sigma)/2) / sqrt(TWO_PI * (sq(sigma)));
-  }
-  
-  float mesurementProbability(ArrayList measurement) {
-    float probability = 100.0;
-    if(poiA.size() == 0) {
-       return 0; 
-    }
+  float measurementLogProbability(ArrayList measurement) {
+    float probability = 0;
+    // Zero sensor noise is deterministic; retain sub-pixel likelihood
+    // resolution instead of dividing by zero.
+    float sigma = max(senseNoise, 0.25);
     if(!vectorMode) {
       for(int i = 0; i < poiA.size(); i++) {
-        int distance = sqrt(sq(xPosition - poiA.get(i)[0])+ sq(yPosition - poiA.get(i)[1])); // not accounting for orientation
-        probability*= gaussian(distance, senseNoise, measurement.get(i));
+        float distance = sqrt(sq(xPosition - poiA.get(i)[0])+ sq(yPosition - poiA.get(i)[1]));
+        probability -= sq(distance - measurement.get(i)) / (2 * sq(sigma));
       } 
     } else {
       for (int i =0; i < rayCount; i++) {
        float myDist = this.getDistanceFromRay(i);
-       probability *= gaussian(myDist, senseNoise, measurement.get(i));
+       probability -= sq(myDist - measurement.get(i)) / (2 * sq(sigma));
       }
     }
     return probability;
   }
   
-  void move (float turn, float forward, boolean particle) {
+  void move (float turn, float forward) {
    if (forward < 0) {
      ////println(name + " cannot move backwards");
      throw new Exception ( name + " cannot move backwards"); 
    }
-   
-   
-   if(!particle) {
-      //println("min distance is " + getMinDistance());
-      if( turnLeft) {
-        turn= PI/25; 
-      } else {
-        turn= -PI/25;         
-      }
-      tempOrientation  = orientation + turn + nextGaussian()*turnNoise;
-      float tempOrientation  = orientation + turn + nextGaussian()*turnNoise;
-      tempOrientation %= TWO_PI;
-      float distance = forward/2 + nextGaussian()* forwardNoise;
-      float x = xPosition + (cos(tempOrientation) * distance);
-      float y = yPosition + (sin(tempOrientation) * distance);
-      x%= worldSize;
-      y%= worldSize;
-      this.setRobot(x,y,tempOrientation);
-      this.setNoise(forwardNoise, turnNoise, senseNoise); 
-      return;
-    }
    // add randomness to the turning command
    float tempOrientation  = orientation + turn + nextGaussian()*turnNoise;
    ////println("tempOrientation" + tempOrientation);
@@ -580,48 +536,11 @@ class Robot {
       return minDistance;
   }
   float getDistanceFromRay(int z) {
-      rayRotation = orientation + (z*(TWO_PI/rayCount));
-      //rayEnd = orientation + ((z+1)*(TWO_PI/rayCount));
-      //rayRotation = rayRotation %TWO_PI;
-      //rayEnd = rayEnd%TWO_PI;
-      //println(rayRotation);
-      int smallestIndex = -1;
+      float rayRotation = orientation + (z*(TWO_PI/rayCount));
       float smallestDistance = rayMaxLength;
-      for (int i =0; i < poiA.size(); i++) { // all rays
-        float xEnd = (xPosition+cos(rayRotation)*radius/2*rayMaxLength);
-        float yEnd = (yPosition+sin(rayRotation)*radius/2*rayMaxLength);
-        float distance = 0;
-        float k = rayMaxLength;
-        float sda = 1;
-        float poiX = poiA.get(i)[0];
-        float poiY = poiA.get(i)[1];
-        //distance = sqrt(sq(xPosition - (poiA.get(i)[0] ))+ sq(yPosition - (poiA.get(i)[1])))-(poiRadius/2); 
-        //float sideOffset = xPosition-poiA.get(i)[0]; // we know the hypotenuse now we need to find another length of the triangle to gt the angle.
-        //float angle = asin(sideOffset/distance);
-        //angle = angle %TWO_PI;
-        //println("Ray " + z + " orientation :" + nf(rayRotation,1,2) + ", " + nf(angle, 1,2) + ", " + nf(rayEnd, 1, 2) + ", " + distance);
-        //if (angle >= rayRotation && angle <= rayEnd) { 
-          //println("true");
-          //if(distance < rayMaxLength) {
-            //k = distance;
-          //}
-        //}
-        
-        for (int j = 0; j < rayMaxLength;) { // start small., grow farther from the robot
-          xEnd = (xPosition+cos(rayRotation)*j); // grow
-          yEnd = (yPosition+sin(rayRotation)*j); // grow
-          distance = sqrt(sq(xEnd - (poiA.get(i)[0] ))+ sq(yEnd - (poiA.get(i)[1]))); 
-          if (distance < poiRadius/2) { // we have collided with a rec.
-            k = j;
-            j =rayMaxLength;
-            //break;
-          }
-          j+=4;
-        }
-        if (k < smallestDistance) {
-          smallestIndex = i;
-          smallestDistance = k; 
-        }
+      for (int i =0; i < poiA.size(); i++) {
+        smallestDistance = min(smallestDistance,
+          rayBoxDistance(xPosition, yPosition, rayRotation, poiA.get(i)[0], poiA.get(i)[1]));
       }
      return smallestDistance; 
     
@@ -635,10 +554,33 @@ class Robot {
     }
     stroke(rayColor);   // Set stroke-color black
     for (int z = 0; z < rayCount; z++) {
+      float rayRotation = orientation + z * TWO_PI / rayCount;
       float smallestDistance = this.getDistanceFromRay(z);
       line((xPosition+cos(rayRotation)*radius/2), (yPosition+sin(rayRotation)*radius/2), (xPosition+cos(rayRotation)*smallestDistance), (yPosition+sin(rayRotation)*smallestDistance));      
 
     }
+
   }
 }
 
+float rayBoxDistance(float x, float y, float angle, float poiX, float poiY) {
+  float near = 0;
+  float far = rayMaxLength;
+  float[] origins = {x, y};
+  float[] directions = {cos(angle), sin(angle)};
+  float[] centers = {poiX, poiY};
+  for (int axis = 0; axis < 2; axis++) {
+    float low = centers[axis] - poiRadius / 2;
+    float high = centers[axis] + poiRadius / 2;
+    if (abs(directions[axis]) < 0.000001) {
+      if (origins[axis] < low || origins[axis] > high) return rayMaxLength;
+    } else {
+      float a = (low - origins[axis]) / directions[axis];
+      float b = (high - origins[axis]) / directions[axis];
+      near = max(near, min(a, b));
+      far = min(far, max(a, b));
+      if (near > far) return rayMaxLength;
+    }
+  }
+  return near;
+}
