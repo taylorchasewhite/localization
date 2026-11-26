@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0a101b">
+    <title>2026 / TUPAC Localization Lab</title>
+    <link rel="stylesheet" href="lab.css">
+</head>
+<body>
+    <svg class="sprite" aria-hidden="true"><defs>
+        <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7Z"/></symbol>
+        <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
+        <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 1 8M4 4v6h6"/></symbol>
+        <symbol id="i-move" viewBox="0 0 24 24"><path d="m8 4 4-3 4 3M12 1v22m-4-3 4 3 4-3M4 8l-3 4 3 4M1 12h22m-3-4 3 4-3 4"/></symbol>
+        <symbol id="i-fit" viewBox="0 0 24 24"><path d="M4 9V4h5m6 0h5v5m0 6v5h-5M9 20H4v-5"/></symbol>
+        <symbol id="i-scan" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M5 5a10 10 0 0 0 0 14m14-14a10 10 0 0 1 0 14M8 8a6 6 0 0 0 0 8m8-8a6 6 0 0 1 0 8"/></symbol>
+    </defs></svg>
+    <main>
+        <header class="lab-heading">
+            <div><div class="eyebrow"><span class="tiny-dot"></span> MONTE CARLO LOCALIZATION <span class="muted">/ 2026</span></div>
+                <h1>Find certainty in the noise.</h1>
+                <p class="lede">Known map. Noisy sensors. One moving robot.</p>
+            </div>
+            <div class="transport">
+                <button id="reset" class="icon-button" title="Replay this experiment from seed 42" aria-label="Reset experiment" disabled><svg><use href="#i-reset"/></svg></button>
+                <button id="speed" class="quiet-button" title="Change simulation speed" aria-label="Simulation speed: 1x" disabled>1x</button>
+                <button id="pause" class="primary-button" disabled><svg><use href="#i-pause"/></svg><span>Pause</span></button>
+            </div>
+        </header>
+
+        <p id="fatal" class="fatal" role="alert" hidden>The lab could not load. Reload this page or switch to Classic.</p>
+        <div class="workspace">
+            <section class="map-panel panel" aria-labelledby="field-title">
+                <div class="panel-heading">
+                    <div><span class="section-number">01</span><h2 id="field-title">The field</h2><span class="map-type">WAREHOUSE / 10 &times; 7 m</span></div>
+                    <span id="tracking" class="state acquiring"><i></i> INITIALIZING</span>
+                </div>
+                <div class="stage">
+                    <canvas id="map" tabindex="0" aria-label="Live warehouse localization map" aria-describedby="map-help">A browser with canvas support is required.</canvas>
+                    <p id="map-help" class="sr-only">Cyan particles are possible robot poses. Mint is the estimate. Amber is the simulated true pose. Drag to pan; use the zoom buttons to zoom. With the map focused, Space pauses, K relocates the robot, and Escape fits the map.</p>
+                    <div class="map-overlay"><svg><use href="#i-scan"/></svg><span id="scan-label">LIDAR + UWB</span><span class="overlay-separator"></span><span id="clock">00:00.0</span></div>
+                    <div class="map-tools">
+                        <button id="zoom-in" aria-label="Zoom in" title="Zoom in">+</button>
+                        <button id="zoom-out" aria-label="Zoom out" title="Zoom out">&minus;</button>
+                        <button id="fit" aria-label="Fit map" title="Fit map"><svg><use href="#i-fit"/></svg></button>
+                    </div>
+                    <div class="map-coordinate" id="coordinates">SEED 0042 / DRAG TO PAN</div>
+                    <div class="scale"><span></span><small id="scale-label">1 m</small></div>
+                </div>
+                <div class="map-legend" aria-label="Map layers">
+                    <label><input id="show-particles" type="checkbox" checked><span class="legend-dot particles"></span>Particles</label>
+                    <label title="Beams originate at the simulated true pose and are hidden when Ground truth is off."><input id="show-sensors" type="checkbox" checked><span class="legend-dot sensors"></span>Sensors</label>
+                    <label><input id="show-truth" type="checkbox" checked><span class="legend-dot truth"></span>Ground truth</label>
+                    <span class="legend-estimate"><span class="legend-dot estimate"></span>Estimate + uncertainty</span>
+                </div>
+                <div class="metrics">
+                    <div><span class="metric-label">POSITION ERROR</span><p><b id="position-error">--</b><span>m</span></p><small>against simulated truth</small></div>
+                    <div><span class="metric-label">HEADING ERROR</span><p><b id="heading-error">--</b><span>deg</span></p><small>orientation difference</small></div>
+                    <div><span class="metric-label">EFFECTIVE SAMPLES</span><p><b id="ess">--</b><span id="ess-total">/ 1600</span></p><small>before resampling</small></div>
+                    <div><span class="metric-label">UPDATE TIME</span><p><b id="filter-time">--</b><span>ms</span></p><small id="frame-rate">measuring frame rate</small></div>
+                </div>
+            </section>
+
+            <aside class="instruments" aria-label="Experiment controls and diagnostics">
+                <section class="panel controls" aria-labelledby="sensors-title">
+                    <div class="panel-heading"><div><span class="section-number">02</span><h2 id="sensors-title">Sensor fusion</h2></div><span class="live-label">LIVE</span></div>
+                    <fieldset class="sensor-modes"><legend class="sr-only">Sensor suite</legend>
+                        <label><input type="radio" name="sensor-mode" value="fused" checked><span>Fused</span></label>
+                        <label><input type="radio" name="sensor-mode" value="lidar"><span>Lidar</span></label>
+                        <label><input type="radio" name="sensor-mode" value="uwb"><span>UWB</span></label>
+                    </fieldset>
+                    <p class="control-description" id="sensor-description">Lidar reads the walls. Four radio anchors resolve position. Together, they reduce ambiguity.</p>
+                    <div class="range-control">
+                        <div><label for="particles">Particle population</label><output for="particles" id="particles-value">1,600</output></div>
+                        <input type="range" id="particles" min="400" max="3000" step="200" value="1600">
+                        <div class="range-extents"><span>LEAN / 400</span><span>DENSE / 3,000</span></div>
+                    </div>
+                    <div class="range-control">
+                        <div><label for="noise">Measurement noise</label><output for="noise" id="noise-value">6 cm</output></div>
+                        <input type="range" id="noise" min="0" max="30" step="1" value="6">
+                        <div class="range-extents"><span>PRECISE</span><span>UNCERTAIN</span></div>
+                    </div>
+                    <details class="advanced">
+                        <summary>Advanced parameters <span>+</span></summary>
+                        <div class="range-control"><div><label for="beams">Lidar beams</label><output for="beams" id="beams-value">16</output></div><input type="range" id="beams" min="4" max="32" step="4" value="16"></div>
+                        <div class="range-control"><div><label for="motion">Odometry noise</label><output for="motion" id="motion-value">1.00x</output></div><input type="range" id="motion" min="0" max="4" step="0.25" value="1"></div>
+                        <p>UWB range noise is twice the lidar setting. At zero noise, a 2 cm model-resolution floor prevents singular likelihoods.</p>
+                    </details>
+                </section>
+
+                <section class="panel telemetry" aria-labelledby="telemetry-title">
+                    <div class="panel-heading"><div><span class="section-number">03</span><h2 id="telemetry-title">Convergence</h2></div><span id="chart-range">0 &ndash; 1 m</span></div>
+                    <canvas id="chart" role="img" aria-label="Position error and posterior spread over the last 30 simulated seconds"></canvas>
+                    <div class="chart-legend"><span><i class="line-error"></i>Position error</span><span><i class="line-spread"></i>Posterior spread</span><span>30s</span></div>
+                    <div class="filter-diagnostics"><span>RESAMPLING</span><b id="resampling">Awaiting first scan</b></div>
+                </section>
+
+                <section class="experiment">
+                    <span class="eyebrow">BREAK ITS ASSUMPTIONS</span>
+                    <h2>Lost. Then found.</h2>
+                    <p>Move the robot without telling the filter. Can it find itself again?</p>
+                    <button id="relocate" class="relocate-button" disabled><svg><use href="#i-move"/></svg>Relocate robot<span aria-hidden="true">&nearr;</span></button>
+                </section>
+            </aside>
+        </div>
+
+        <footer>
+            <details class="explainer"><summary>What am I looking at?</summary>
+                <div class="explanation-grid">
+                    <p><b>01 / Predict.</b> Each particle is a possible position and heading. Noisy odometry moves every hypothesis through the same collision-aware map.</p>
+                    <p><b>02 / Observe.</b> Ray-cast lidar and UWB ranges score those hypotheses. The filter never receives the robot's true position. Ground truth is shown only for evaluation.</p>
+                    <p><b>03 / Refine.</b> Log-space weights avoid numerical collapse. Low effective sample size triggers systematic resampling; poor sensor agreement introduces global recovery proposals.</p>
+                </div>
+                <p class="caveat">A known-map simulation, not SLAM or production navigation. Noise is idealized Gaussian noise. The ellipse is a Gaussian approximation around the dominant position hypothesis, not a calibrated confidence guarantee. Lidar alone can be ambiguous; UWB does not directly observe heading. Replay restarts seed 42 with your current settings.</p>
+            </details>
+            <div class="footer-line"><span>TAYLOR WHITE <span class="muted">/ AI-ASSISTED EDITION 2026</span></span><a href="https://github.com/taylorchasewhite/localization" target="_blank" rel="noopener noreferrer">Explore the source &nearr;</a></div>
+        </footer>
+        <p id="announcement" class="sr-only" role="status" aria-live="polite">Initializing the simulation.</p>
+    </main>
+    <script type="module" src="app.mjs" onerror="document.getElementById('fatal').hidden=false"></script>
+</body>
+</html>

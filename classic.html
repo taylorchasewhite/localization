@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Taylor's Robotic Localization Visualization</title>
+	<style>
+		body { margin: 8px; background: #fff; color: #222; font: 14px Arial, sans-serif; }
+		canvas { display: block; width: 100%; height: auto; }
+		canvas:focus-visible { outline: 2px solid #0079b8; outline-offset: -2px; }
+		details { padding: 5px 0; }
+		summary { cursor: pointer; }
+		p { margin: 6px 0; }
+		#error { color: #a00; }
+	</style>
+</head>
+<body>
+	<p id="status" role="status">Loading localization simulation...</p>
+	<details>
+		<summary>Controls and explanation</summary>
+		<p>Click or tap the canvas to add a green landmark (POI); click near one to remove it.
+			Add at least three well-spaced landmarks to help the pink particles find the blue robot, Tupac.</p>
+		<p>Focus the canvas for keyboard controls: Up/Down = sensing noise;
+			Right/Left = movement noise; W/S = ray count; Shift = turning noise;
+			V = experimental ray-sensing mode. Lower mean error is better.</p>
+		<p>The square world wraps at its edges. Landmark sensing measures direct distance
+			to each known POI; ray mode measures the nearest visible square, up to 200 pixels.
+			No landmarks means no measurement update, not a successful localization.</p>
+	</details>
+	<p id="error" role="alert" hidden></p>
+	<canvas id="weblocalization" width="1000" height="1000" tabindex="0"
+		aria-label="Interactive particle-filter localization simulation">
+		Your browser does not support the canvas tag.
+	</canvas>
+	<noscript>Enable JavaScript to run this visualization.</noscript>
+	<script src="processing.js"></script>
+	<script src="localization.js"></script>
+</body>
+</html>
