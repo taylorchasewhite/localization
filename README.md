@@ -155,13 +155,18 @@ inside the same iframe origin: the old direct canvas embed tried to fetch its
 sketch across `www.old` and `old` hostnames and was blocked by CORS. The iframe
 also works on the main site's React frontend, where injected post scripts do
 not execute. The main site may cache WordPress content for up to an hour.
-The updated blog embed opts into `#2026`; the Classic tab remains available.
+The blog post and project page embed `#classic` by default. Both editions run
+inside the same embedded frame: use its Classic / 2026 Lab tabs without leaving
+the article. Do not substitute a direct `classic.html` embed, which omits the
+edition switch. The version query in `notes.js` avoids cached pre-switch HTML.
 
 ### November 25, 2026: AI-assisted 2026 edition
 
 Added the new Lab without replacing the current simulation. The blog retains its
 original article and Classic repair note, adds a dated upgrade note, and labels
 the historical keyboard instructions as Classic controls.
+The project page's legacy inline scripts/canvas are replaced by the same
+Classic-first embed; its original explanation and video are preserved.
 
 ### Additional links
  - [Check out the project on TaylorChaseWhite.com](http://www.taylorchasewhite.com/robotic-localization-visualization/)
